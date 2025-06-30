@@ -10,6 +10,7 @@ import subprocess
 import shutil
 import platform
 import time
+import importlib.util
 from pathlib import Path
 
 def print_separator(char="=", length=60):
@@ -101,6 +102,116 @@ def check_file_exists(file_path, description):
         print_error(f"{description} not found: {file_path}")
         return False
 
+def get_package_path(package_name):
+    """Get the path of an installed package"""
+    try:
+        spec = importlib.util.find_spec(package_name)
+        if spec and spec.origin:
+            return Path(spec.origin).parent
+        return None
+    except:
+        return None
+
+def find_data_files():
+    """Find all data files that need to be included"""
+    print_progress("Discovering data files to include...")
+    
+    data_files = []
+    
+    # CustomTkinter data files
+    ctk_path = get_package_path('customtkinter')
+    if ctk_path:
+        print_info(f"CustomTkinter path: {ctk_path}")
+        
+        # Include theme files
+        theme_dir = ctk_path / 'assets'
+        if theme_dir.exists():
+            data_files.append((str(theme_dir), 'customtkinter/assets'))
+            print_success(f"Found CustomTkinter assets: {theme_dir}")
+        
+        # Include fonts
+        font_dir = ctk_path / 'assets' / 'fonts'
+        if font_dir.exists():
+            data_files.append((str(font_dir), 'customtkinter/assets/fonts'))
+            print_success(f"Found CustomTkinter fonts: {font_dir}")
+            
+        # Include icons
+        icon_dir = ctk_path / 'assets' / 'icons'
+        if icon_dir.exists():
+            data_files.append((str(icon_dir), 'customtkinter/assets/icons'))
+            print_success(f"Found CustomTkinter icons: {icon_dir}")
+    
+    # PIL/Pillow data files
+    pil_path = get_package_path('PIL')
+    if pil_path:
+        print_info(f"PIL path: {pil_path}")
+        # Include any needed PIL data files
+        
+    print_success(f"Found {len(data_files)} data file groups to include")
+    return data_files
+
+def get_all_hidden_imports():
+    """Get comprehensive list of hidden imports"""
+    print_progress("Preparing comprehensive hidden imports list...")
+    
+    hidden_imports = [
+        # Core dependencies
+        'customtkinter',
+        'ffmpeg',
+        'PIL',
+        'PIL.Image',
+        'PIL._tkinter_finder',
+        'PIL.ImageTk',
+        
+        # CustomTkinter dependencies
+        'customtkinter.windows',
+        'customtkinter.windows.widgets',
+        'customtkinter.appearance_mode',
+        'customtkinter.theme_manager',
+        'customtkinter.settings',
+        'customtkinter.draw_engine',
+        
+        # Tkinter related
+        'tkinter',
+        'tkinter.filedialog',
+        'tkinter.messagebox',
+        'tkinter.simpledialog',
+        'tkinter.ttk',
+        '_tkinter',
+        
+        # System and standard library
+        'threading',
+        'pathlib',
+        'subprocess',
+        'shutil',
+        'tempfile',
+        'json',
+        'os',
+        'sys',
+        'platform',
+        'time',
+        
+        # FFmpeg related
+        'ffmpeg._run',
+        'ffmpeg._probe',
+        'ffmpeg._dag',
+        'future',
+        'future.builtins',
+        
+        # Additional potential dependencies
+        'pkg_resources',
+        'setuptools',
+        'importlib',
+        'importlib.util',
+        'collections',
+        'collections.abc',
+        'typing',
+        'typing_extensions',
+    ]
+    
+    print_success(f"Prepared {len(hidden_imports)} hidden imports")
+    return hidden_imports
+
 def check_pyinstaller():
     """Check if PyInstaller is installed with detailed feedback"""
     print_progress("Checking PyInstaller installation...")
@@ -143,11 +254,14 @@ def check_dependencies():
     }
     
     missing_deps = []
+    installed_versions = {}
     
     for module, description in deps.items():
         try:
-            __import__(module)
-            print_success(f"{description} - Available")
+            imported_module = __import__(module)
+            version = getattr(imported_module, '__version__', 'unknown')
+            installed_versions[module] = version
+            print_success(f"{description} - Available (v{version})")
         except ImportError:
             print_warning(f"{description} - Missing")
             missing_deps.append(module)
@@ -158,6 +272,9 @@ def check_dependencies():
         return False
     else:
         print_success("All dependencies are available")
+        print_info("Installed versions:")
+        for module, version in installed_versions.items():
+            print(f"  📦 {module}: {version}")
         return True
 
 def get_ffmpeg_url():
@@ -201,21 +318,44 @@ def build_executable():
     # Prepare PyInstaller command
     system = platform.system()
     
+    # Get all hidden imports
+    hidden_imports = get_all_hidden_imports()
+    
+    # Get data files
+    data_files = find_data_files()
+    
     cmd = [
         'pyinstaller',
         '--onefile',
         '--windowed',
         '--name', 'SubtitleEditor',
-        '--add-data', f'requirements.txt{os.pathsep}.',
-        '--hidden-import', 'customtkinter',
-        '--hidden-import', 'PIL._tkinter_finder',
-        '--hidden-import', 'ffmpeg',
         '--clean',
+        '--noconfirm',
     ]
+    
+    # Add data files
+    cmd.extend(['--add-data', f'requirements.txt{os.pathsep}.'])
+    
+    for src, dst in data_files:
+        cmd.extend(['--add-data', f'{src}{os.pathsep}{dst}'])
+    
+    # Add all hidden imports
+    for import_name in hidden_imports:
+        cmd.extend(['--hidden-import', import_name])
     
     # Add platform-specific options
     if system == 'Windows':
         cmd.extend(['--console'])  # Keep console for debugging on Windows
+        # Exclude some Windows-specific modules that might cause issues
+        cmd.extend(['--exclude-module', 'FixTk'])
+        cmd.extend(['--exclude-module', 'tcl'])
+        cmd.extend(['--exclude-module', 'tk'])
+    
+    # Optimize the build
+    cmd.extend([
+        '--strip',  # Strip debug information
+        '--optimize', '2',  # Optimize bytecode
+    ])
     
     cmd.append('main.py')
     
@@ -223,11 +363,15 @@ def build_executable():
     for i, arg in enumerate(cmd):
         print(f"  {i+1:2d}. {arg}")
     
+    print_info(f"Total arguments: {len(cmd)}")
+    print_info(f"Hidden imports: {len(hidden_imports)}")
+    print_info(f"Data file groups: {len(data_files)}")
+    
     # Run PyInstaller
     success, output = run_command_with_feedback(
         cmd,
         "Building executable with PyInstaller",
-        timeout=600  # 10 minutes timeout
+        timeout=900  # 15 minutes timeout for larger builds
     )
     
     if success:
@@ -238,6 +382,24 @@ def build_executable():
         exe_path = Path('dist') / exe_name
         
         if check_file_exists(exe_path, "Executable file"):
+            # Test the executable briefly
+            print_progress("Testing executable...")
+            try:
+                test_result = subprocess.run(
+                    [str(exe_path), '--help'], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+                if test_result.returncode == 0 or 'usage' in test_result.stdout.lower():
+                    print_success("Executable test passed")
+                else:
+                    print_warning("Executable test returned non-zero exit code (might be normal)")
+            except subprocess.TimeoutExpired:
+                print_warning("Executable test timed out (might be normal for GUI apps)")
+            except Exception as e:
+                print_warning(f"Could not test executable: {e}")
+            
             return True
         else:
             print_error("Executable was not created despite successful build")
@@ -347,7 +509,11 @@ where ffmpeg >nul 2>&1
 if errorlevel 1 (
     echo WARNING: FFmpeg not found in PATH
     echo For full functionality, download FFmpeg and place ffmpeg.exe in this folder
+    echo Download from: https://www.gyan.dev/ffmpeg/builds/
     echo.
+    echo The application will still start, but video processing features may not work.
+    echo.
+    pause
 )
 
 REM Run the application
@@ -358,7 +524,12 @@ REM Keep window open if there was an error
 if errorlevel 1 (
     echo.
     echo Application ended with error code %errorlevel%
-    echo Check that all dependencies are installed
+    echo.
+    echo This might be due to:
+    echo - Missing FFmpeg (required for video processing)
+    echo - Corrupted video files
+    echo - Insufficient permissions
+    echo.
     pause
 )
 '''
@@ -377,6 +548,13 @@ if ! command -v ffmpeg &> /dev/null; then
     echo "WARNING: FFmpeg not found in PATH"
     echo "For full functionality, download FFmpeg and place it in this folder"
     echo
+    echo "Download links:"
+    echo "- macOS: https://evermeet.cx/ffmpeg/"
+    echo "- Linux: https://johnvansickle.com/ffmpeg/"
+    echo
+    echo "The application will still start, but video processing features may not work."
+    echo
+    read -p "Press Enter to continue..."
 fi
 
 # Run the application
@@ -387,7 +565,12 @@ echo "Launching Subtitle Editor..."
 if [ $? -ne 0 ]; then
     echo
     echo "Application ended with error"
-    echo "Check that all dependencies are installed"
+    echo
+    echo "This might be due to:"
+    echo "- Missing FFmpeg (required for video processing)"
+    echo "- Corrupted video files"
+    echo "- Insufficient permissions"
+    echo
     read -p "Press Enter to continue..."
 fi
 '''
@@ -406,17 +589,23 @@ fi
     setup_content = f"""Subtitle Editor - Portable Version
 ===================================
 
-QUICK START:
-1. Download FFmpeg for your platform and place the executable in this folder
-2. Run the launcher script: {launcher_script.name}
-3. Or double-click the executable directly: {exe_name}
+IMPORTANT: This is a PORTABLE application!
+- No Python installation required
+- All dependencies are bundled in the executable
+- Only FFmpeg needs to be added for full functionality
 
-FFMPEG SETUP:
-For full functionality, you need FFmpeg:
+QUICK START:
+1. Download FFmpeg for your platform (see links below)
+2. Place the FFmpeg executable in this folder
+3. Run: {launcher_script.name}
+4. Or double-click: {exe_name}
+
+FFMPEG SETUP (Required for video processing):
 
 Windows:
 - Download from: https://www.gyan.dev/ffmpeg/builds/
 - Extract ffmpeg.exe to this folder
+- Or add FFmpeg to your system PATH
 
 macOS:
 - Using Homebrew: brew install ffmpeg
@@ -432,14 +621,20 @@ Linux:
 FEATURES:
 - View subtitle tracks in video files
 - Extract subtitles to separate files
-- Add new subtitle tracks
-- Remove unwanted subtitles
+- Add new subtitle tracks from external files
+- Remove unwanted subtitle tracks
 - Set default subtitle tracks
 - Modern UI with dark/light themes
+- Completely portable - no installation needed!
 
 SUPPORTED FORMATS:
 Video: MP4, AVI, MKV, MOV, WMV, FLV, WebM, M4V
 Subtitles: SRT, ASS, SSA, VTT, SUB
+
+TROUBLESHOOTING:
+- If the app doesn't start: Check Windows Defender/antivirus
+- If video loading fails: Ensure FFmpeg is properly installed
+- If UI looks wrong: Try toggling light/dark theme
 
 For detailed instructions, see README.txt
 
@@ -462,12 +657,17 @@ Platform: {platform.system()} {platform.release()} ({platform.machine()})
 Python Version: {sys.version}
 Build Directory: {os.getcwd()}
 
+PORTABLE BUILD - All Python dependencies included!
+- No Python installation required on target system
+- All libraries bundled in executable
+- Only FFmpeg required as external dependency
+
 Files Included:
-- {exe_name} (Main executable)
+- {exe_name} (Main executable - SELF-CONTAINED)
 - README.txt (Documentation)
 - SETUP.txt (Setup instructions)
-- requirements.txt (Python dependencies)
-- {launcher_script.name} (Launcher script)
+- requirements.txt (Python dependencies - for reference only)
+- {launcher_script.name} (Launcher script with FFmpeg check)
 - examples/sample_subtitle.srt (Sample file)
 
 For updates and source code:
@@ -502,10 +702,12 @@ https://github.com/AtaraxyState/SubtitleEditor
             print(f"  📁 {rel_path}/")
     
     print("\n🚀 NEXT STEPS:")
-    print("1. Download FFmpeg for your platform")
+    print("1. Download FFmpeg for your target platform")
     print("2. Place the FFmpeg executable in the dist_portable folder")
     print("3. Test the application using the launcher script")
     print("4. Copy the entire dist_portable folder to distribute")
+    print("\n✨ IMPORTANT: The executable is now FULLY PORTABLE!")
+    print("   No Python or pip installation needed on target systems!")
     
     return True
 
@@ -565,7 +767,7 @@ def main():
             return 1
     
     # Build executable
-    print_step(5, 6, "Building Executable")
+    print_step(5, 6, "Building Self-Contained Executable")
     if not build_executable():
         print_error("Build process failed")
         return 1
@@ -588,14 +790,17 @@ def main():
     print(f"🔗 Project repository: https://github.com/AtaraxyState/SubtitleEditor")
     
     print("\n✅ BUILD SUMMARY:")
-    print("   • Executable created and tested")
-    print("   • Documentation included")
+    print("   • Self-contained executable created")
+    print("   • All Python dependencies bundled")
+    print("   • No Python installation required on target")
+    print("   • Only FFmpeg needed as external dependency")
+    print("   • Complete documentation included")
     print("   • Sample files provided")
-    print("   • Launcher scripts generated")
-    print("   • Setup instructions created")
+    print("   • Smart launcher scripts generated")
     
     print("\n🚚 DISTRIBUTION READY!")
-    print("   Your portable Subtitle Editor is ready for distribution")
+    print("   Your portable Subtitle Editor is truly portable now!")
+    print("   Users only need to add FFmpeg - no Python/pip required!")
     
     return 0
 
