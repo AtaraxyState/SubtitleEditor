@@ -222,7 +222,7 @@ class SubtitleEditor:
         file_path = filedialog.asksaveasfilename(
             title="Save Subtitle File",
             defaultextension=".srt",
-            initialvalue=default_name,
+            initialfile=default_name,
             filetypes=[("SRT files", "*.srt"), ("All files", "*.*")]
         )
         
@@ -256,7 +256,7 @@ class SubtitleEditor:
             output_path = filedialog.asksaveasfilename(
                 title="Save Video with New Subtitle",
                 defaultextension=Path(self.current_video_path).suffix,
-                initialvalue=f"{video_name}_with_subtitle{Path(self.current_video_path).suffix}",
+                initialfile=f"{video_name}_with_subtitle{Path(self.current_video_path).suffix}",
                 filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
             )
             
@@ -278,7 +278,7 @@ class SubtitleEditor:
             output_path = filedialog.asksaveasfilename(
                 title="Save Video without Subtitle",
                 defaultextension=Path(self.current_video_path).suffix,
-                initialvalue=f"{video_name}_removed_subtitle{Path(self.current_video_path).suffix}",
+                initialfile=f"{video_name}_removed_subtitle{Path(self.current_video_path).suffix}",
                 filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
             )
             
@@ -300,7 +300,7 @@ class SubtitleEditor:
             output_path = filedialog.asksaveasfilename(
                 title="Save Video with Default Subtitle",
                 defaultextension=Path(self.current_video_path).suffix,
-                initialvalue=f"{video_name}_default_subtitle{Path(self.current_video_path).suffix}",
+                initialfile=f"{video_name}_default_subtitle{Path(self.current_video_path).suffix}",
                 filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
             )
             
@@ -320,7 +320,7 @@ class SubtitleEditor:
         output_path = filedialog.asksaveasfilename(
             title="Export Video",
             defaultextension=Path(self.current_video_path).suffix,
-            initialvalue=f"exported_{Path(self.current_video_path).name}",
+            initialfile=f"exported_{Path(self.current_video_path).name}",
             filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
         )
         
