@@ -1,0 +1,54 @@
+Subtitle Editor - Portable Version
+===================================
+
+IMPORTANT: This is a PORTABLE application!
+- No Python installation required
+- All dependencies are bundled in the executable
+- Only FFmpeg needs to be added for full functionality
+
+QUICK START:
+1. Download FFmpeg for your platform (see links below)
+2. Place the FFmpeg executable in this folder
+3. Run: run_subtitle_editor.bat
+4. Or double-click: SubtitleEditor.exe
+
+FFMPEG SETUP (Required for video processing):
+
+Windows:
+- Download from: https://www.gyan.dev/ffmpeg/builds/
+- Extract ffmpeg.exe to this folder
+- Or add FFmpeg to your system PATH
+
+macOS:
+- Using Homebrew: brew install ffmpeg
+- Or download from: https://evermeet.cx/ffmpeg/
+- Place ffmpeg binary in this folder
+
+Linux:
+- Ubuntu/Debian: sudo apt install ffmpeg
+- CentOS/RHEL: sudo yum install ffmpeg
+- Or download from: https://johnvansickle.com/ffmpeg/
+- Place ffmpeg binary in this folder
+
+FEATURES:
+- View subtitle tracks in video files
+- Extract subtitles to separate files
+- Add new subtitle tracks from external files
+- Remove unwanted subtitle tracks
+- Set default subtitle tracks
+- Modern UI with dark/light themes
+- Completely portable - no installation needed!
+
+SUPPORTED FORMATS:
+Video: MP4, AVI, MKV, MOV, WMV, FLV, WebM, M4V
+Subtitles: SRT, ASS, SSA, VTT, SUB
+
+TROUBLESHOOTING:
+- If the app doesn't start: Check Windows Defender/antivirus
+- If video loading fails: Ensure FFmpeg is properly installed
+- If UI looks wrong: Try toggling light/dark theme
+
+For detailed instructions, see README.txt
+
+Generated on: 2025-07-01 01:33:06
+Platform: Windows 11

@@ -109,43 +109,157 @@ class VideoHandler:
     
     def add_subtitle_track(self, subtitle_file_path: str, output_path: str, language: str = "unknown", title: str = "", is_default: bool = False) -> bool:
         """Add a new subtitle track to the video"""
-        if not self.current_video_path or not os.path.exists(subtitle_file_path):
+        print(f"🔄 DEBUG VideoHandler: Starting add_subtitle_track")
+        print(f"   📁 Video: {self.current_video_path}")
+        print(f"   📄 Subtitle: {subtitle_file_path}")
+        print(f"   📤 Output: {output_path}")
+        print(f"   🌐 Language: {language}")
+        print(f"   📝 Title: {title}")
+        print(f"   ⭐ Default: {is_default}")
+        print(f"   📊 Current tracks: {len(self.subtitle_tracks)}")
+        
+        # Validation checks
+        if not self.current_video_path:
+            print("❌ DEBUG: No current video path")
+            return False
+            
+        if not os.path.exists(self.current_video_path):
+            print(f"❌ DEBUG: Video file doesn't exist: {self.current_video_path}")
+            return False
+            
+        if not os.path.exists(subtitle_file_path):
+            print(f"❌ DEBUG: Subtitle file doesn't exist: {subtitle_file_path}")
             return False
         
+        print("✅ DEBUG: All file validation passed")
+        
         try:
-            video_input = ffmpeg.input(self.current_video_path)
-            subtitle_input = ffmpeg.input(subtitle_file_path)
+            print("🔄 DEBUG: Using subprocess approach for better control")
             
-            # Prepare metadata
-            metadata = {}
-            if language != "unknown":
-                metadata[f'metadata:s:s:{len(self.subtitle_tracks)}'] = f'language={language}'
-            if title:
-                metadata[f'metadata:s:s:{len(self.subtitle_tracks)}'] = f'title={title}'
+            # Get current subtitle track count for proper indexing
+            current_sub_count = len(self.subtitle_tracks)
+            print(f"📊 DEBUG: Current subtitle track count: {current_sub_count}")
             
-            # Set disposition
-            disposition = {}
+            # Build FFmpeg command manually for better control
+            import subprocess
+            
+            # Determine subtitle format and codec
+            subtitle_ext = Path(subtitle_file_path).suffix.lower()
+            subtitle_codec = 'copy'
+            
+            # For ASS/SSA files, we might need to convert them or handle them specially
+            if subtitle_ext in ['.ass', '.ssa']:
+                print(f"🎭 DEBUG: Detected ASS/SSA subtitle format")
+                # Keep original codec for ASS/SSA
+                subtitle_codec = 'copy'
+            elif subtitle_ext in ['.srt']:
+                print(f"📝 DEBUG: Detected SRT subtitle format")
+                subtitle_codec = 'copy'
+            
+            cmd = [
+                'ffmpeg',
+                '-i', self.current_video_path,      # Input 0: video file
+                '-i', subtitle_file_path,           # Input 1: subtitle file
+                '-map', '0',                        # Map all streams from input 0 (video)
+                '-map', '1:0',                      # Map stream 0 from input 1 (subtitle)
+                '-c:v', 'copy',                     # Copy video without re-encoding
+                '-c:a', 'copy',                     # Copy audio without re-encoding
+                '-c:s', subtitle_codec,             # Handle subtitle codec
+                '-y',                               # Overwrite output file
+                output_path
+            ]
+            
+            # Add metadata for the NEW subtitle track (use correct index)
+            new_sub_index = current_sub_count
+            
+            if language and language != "unknown":
+                cmd.extend([f'-metadata:s:s:{new_sub_index}', f'language={language}'])
+                print(f"🌐 DEBUG: Added language metadata for track s:{new_sub_index}: {language}")
+            
+            if title and title.strip():
+                cmd.extend([f'-metadata:s:s:{new_sub_index}', f'title={title}'])
+                print(f"📝 DEBUG: Added title metadata for track s:{new_sub_index}: {title}")
+            
+            # Set disposition for the NEW subtitle track
             if is_default:
-                disposition[f'disposition:s:s:{len(self.subtitle_tracks)}'] = 'default'
+                cmd.extend([f'-disposition:s:s:{new_sub_index}', 'default'])
+                print(f"⭐ DEBUG: Set track s:{new_sub_index} as default")
             
-            # Combine video and subtitle
-            output_args = {
-                'c:v': 'copy',
-                'c:a': 'copy',
-                'c:s': 'copy',
-                **metadata,
-                **disposition
-            }
+            print(f"🔄 DEBUG: FFmpeg command: {' '.join(cmd)}")
             
-            (
-                ffmpeg
-                .output(video_input, subtitle_input, output_path, **output_args)
-                .overwrite_output()
-                .run(quiet=True)
+            print("🔄 DEBUG: Running FFmpeg command via subprocess...")
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False
             )
+            
+            print(f"📤 DEBUG: FFmpeg return code: {result.returncode}")
+            if result.stdout:
+                print(f"📤 DEBUG: FFmpeg stdout: {result.stdout}")
+            if result.stderr:
+                print(f"📤 DEBUG: FFmpeg stderr: {result.stderr}")
+            
+            if result.returncode == 0:
+                print("✅ DEBUG: FFmpeg command completed successfully")
+                print(f"📤 DEBUG: Output file created: {os.path.exists(output_path)}")
+                if os.path.exists(output_path):
+                    output_size = os.path.getsize(output_path)
+                    print(f"📏 DEBUG: Output file size: {output_size} bytes")
+                return True
+            else:
+                print(f"❌ DEBUG: FFmpeg failed with return code: {result.returncode}")
+                return False
+            
+            print("✅ DEBUG: FFmpeg command completed successfully")
+            print(f"📤 DEBUG: Output file created: {os.path.exists(output_path)}")
+            if os.path.exists(output_path):
+                output_size = os.path.getsize(output_path)
+                print(f"📏 DEBUG: Output file size: {output_size} bytes")
+            
             return True
+            
+        except ffmpeg.Error as e:
+            print(f"❌ DEBUG: FFmpeg error occurred")
+            print(f"   📤 stdout: {e.stdout.decode() if e.stdout else 'None'}")
+            print(f"   📤 stderr: {e.stderr.decode() if e.stderr else 'None'}")
+            return False
         except Exception as e:
-            print(f"Error adding subtitle track: {e}")
+            print(f"❌ DEBUG: General error adding subtitle track: {e}")
+            print(f"   🔍 Error type: {type(e).__name__}")
+            import traceback
+            print(f"   📋 Traceback: {traceback.format_exc()}")
+            return False
+    
+    def add_subtitle_track_inplace(self, subtitle_file_path: str, temp_output_path: str, language: str = "unknown", title: str = "", is_default: bool = False) -> bool:
+        """Add subtitle track and replace current video in-place"""
+        print(f"🔄 DEBUG VideoHandler: Starting add_subtitle_track_inplace")
+        
+        # First add the subtitle track to temporary file
+        success = self.add_subtitle_track(subtitle_file_path, temp_output_path, language, title, is_default)
+        
+        if success and os.path.exists(temp_output_path):
+            print("✅ DEBUG: Subtitle added to temp file, replacing original...")
+            try:
+                # Replace the original file with the new one
+                import shutil
+                shutil.move(temp_output_path, self.current_video_path)
+                print("✅ DEBUG: Original file replaced successfully")
+                
+                # Reload the video to update subtitle tracks
+                self.load_video(self.current_video_path)
+                print("✅ DEBUG: Video reloaded with new subtitle track")
+                
+                return True
+            except Exception as e:
+                print(f"❌ DEBUG: Error replacing original file: {e}")
+                # Clean up temp file if it exists
+                if os.path.exists(temp_output_path):
+                    os.remove(temp_output_path)
+                return False
+        else:
+            print("❌ DEBUG: Failed to create temp file with subtitle")
             return False
     
     def set_default_subtitle(self, track_index: int, output_path: str) -> bool:

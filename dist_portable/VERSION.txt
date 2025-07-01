@@ -1,0 +1,23 @@
+Subtitle Editor - Build Information
+=====================================
+
+Build Date: 2025-07-01 01:33:06
+Platform: Windows 11 (AMD64)
+Python Version: 3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]
+Build Directory: D:\Documents\Git\Subitle editor
+
+PORTABLE BUILD - All Python dependencies included!
+- No Python installation required on target system
+- All libraries bundled in executable
+- Only FFmpeg required as external dependency
+
+Files Included:
+- SubtitleEditor.exe (Main executable - SELF-CONTAINED)
+- README.txt (Documentation)
+- SETUP.txt (Setup instructions)
+- requirements.txt (Python dependencies - for reference only)
+- run_subtitle_editor.bat (Launcher script with FFmpeg check)
+- examples/sample_subtitle.srt (Sample file)
+
+For updates and source code:
+https://github.com/AtaraxyState/SubtitleEditor

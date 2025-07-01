@@ -235,6 +235,16 @@ class SubtitleEditor:
     
     def add_subtitle(self):
         """Add new subtitle track"""
+        print("🔄 DEBUG: Starting add_subtitle()")
+        
+        # Check if video is loaded
+        if not self.current_video_path:
+            print("❌ DEBUG: No video loaded")
+            messagebox.showerror("Error", "Please load a video first")
+            return
+        
+        print(f"✅ DEBUG: Current video: {self.current_video_path}")
+        
         file_path = filedialog.askopenfilename(
             title="Select Subtitle File",
             filetypes=[
@@ -244,29 +254,47 @@ class SubtitleEditor:
         )
         
         if not file_path:
+            print("❌ DEBUG: No subtitle file selected")
             return
+        
+        print(f"✅ DEBUG: Selected subtitle file: {file_path}")
+        
+        # Check if subtitle file exists
+        if not os.path.exists(file_path):
+            print(f"❌ DEBUG: Subtitle file doesn't exist: {file_path}")
+            messagebox.showerror("Error", f"Subtitle file not found: {file_path}")
+            return
+        
+        print("🔄 DEBUG: Opening subtitle properties dialog")
         
         # Get subtitle properties from user
         dialog = SubtitlePropertiesDialog(self.root)
+        self.root.wait_window(dialog.dialog)  # Wait for dialog to close
+        print(f"🔄 DEBUG: Dialog closed, checking result: {dialog.result}")
+        
         if dialog.result:
             language, title, is_default = dialog.result
+            print(f"✅ DEBUG: Dialog result - Language: {language}, Title: {title}, Default: {is_default}")
             
-            # Create output path
+            # Add subtitle to current video in-place (create temporary file)
+            print("🔄 DEBUG: Adding subtitle in-place...")
+            
+            # Create a temporary output file
+            import tempfile
+            temp_dir = tempfile.gettempdir()
             video_name = Path(self.current_video_path).stem
-            output_path = filedialog.asksaveasfilename(
-                title="Save Video with New Subtitle",
-                defaultextension=Path(self.current_video_path).suffix,
-                initialfile=f"{video_name}_with_subtitle{Path(self.current_video_path).suffix}",
-                filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
-            )
+            temp_output = os.path.join(temp_dir, f"{video_name}_temp_with_subtitle{Path(self.current_video_path).suffix}")
             
-            if output_path:
-                self.process_video_operation(
-                    lambda: self.video_handler.add_subtitle_track(file_path, output_path, language, title, is_default),
-                    "Adding subtitle track...",
-                    "Subtitle added successfully!",
-                    output_path
-                )
+            print(f"📁 DEBUG: Temporary output path: {temp_output}")
+            
+            self.process_video_operation(
+                lambda: self.video_handler.add_subtitle_track_inplace(file_path, temp_output, language, title, is_default),
+                "Adding subtitle track...",
+                "Subtitle added to video!",
+                temp_output
+            )
+        else:
+            print("❌ DEBUG: Dialog cancelled or no result")
     
     def remove_subtitle(self, track_index):
         """Remove subtitle track"""
@@ -335,6 +363,11 @@ class SubtitleEditor:
     
     def process_video_operation(self, operation, loading_text, success_text, output_path):
         """Process video operation with loading UI"""
+        print(f"🔄 DEBUG: Starting process_video_operation")
+        print(f"   💬 Loading text: {loading_text}")
+        print(f"   ✅ Success text: {success_text}")
+        print(f"   📤 Output path: {output_path}")
+        
         # Create progress dialog
         progress_window = ctk.CTkToplevel(self.root)
         progress_window.title("Processing")
@@ -350,30 +383,61 @@ class SubtitleEditor:
         progress_bar.start()
         
         def run_operation():
+            print("🔄 DEBUG: run_operation thread started")
             try:
+                print("🔄 DEBUG: Calling operation function...")
                 success = operation()
+                print(f"✅ DEBUG: Operation completed with result: {success}")
                 self.root.after(0, lambda: self.on_operation_complete(progress_window, success, success_text, output_path))
             except Exception as e:
+                print(f"❌ DEBUG: Exception in run_operation: {e}")
+                import traceback
+                print(f"   📋 Traceback: {traceback.format_exc()}")
                 self.root.after(0, lambda: self.on_operation_error(progress_window, str(e)))
         
+        print("🔄 DEBUG: Starting operation thread...")
         thread = threading.Thread(target=run_operation)
         thread.daemon = True
         thread.start()
+        print("🔄 DEBUG: Thread started successfully")
     
     def on_operation_complete(self, progress_window, success, success_text, output_path):
         """Handle operation completion"""
+        print(f"🔄 DEBUG: on_operation_complete called")
+        print(f"   ✅ Success: {success}")
+        print(f"   💬 Success text: {success_text}")
+        print(f"   📤 Output path: {output_path}")
+        
         progress_window.destroy()
         
         if success:
-            messagebox.showinfo("Success", f"{success_text}\nSaved to: {output_path}")
-            # Optionally reload the new video
-            if messagebox.askyesno("Load New Video", "Would you like to load the newly created video?"):
-                self.load_video(output_path)
+            print("✅ DEBUG: Operation was successful")
+            
+            # Check if this is an in-place operation (temp file)
+            if "temp_with_subtitle" in output_path:
+                print("🔄 DEBUG: In-place operation detected, refreshing UI")
+                messagebox.showinfo("Success", success_text)
+                # Refresh the UI to show the new subtitle track
+                self.update_subtitle_tracks()
+                self.update_video_info()
+            else:
+                print("✅ DEBUG: Export operation, showing success dialog")
+                messagebox.showinfo("Success", f"{success_text}\nSaved to: {output_path}")
+                # Optionally reload the new video
+                if messagebox.askyesno("Load New Video", "Would you like to load the newly created video?"):
+                    print("🔄 DEBUG: User chose to load new video")
+                    self.load_video(output_path)
+                else:
+                    print("🔄 DEBUG: User chose not to load new video")
         else:
+            print("❌ DEBUG: Operation failed, showing error dialog")
             messagebox.showerror("Error", "Operation failed")
     
     def on_operation_error(self, progress_window, error_message):
         """Handle operation error"""
+        print(f"❌ DEBUG: on_operation_error called")
+        print(f"   💬 Error message: {error_message}")
+        
         progress_window.destroy()
         messagebox.showerror("Error", f"Operation failed: {error_message}")
     
@@ -437,12 +501,15 @@ class SubtitlePropertiesDialog:
         cancel_button.pack(side="right", padx=5)
     
     def ok_clicked(self):
-        self.result = (
+        result = (
             self.language_var.get(),
             self.title_var.get(),
             self.default_var.get()
         )
+        print(f"🔄 DEBUG Dialog: OK clicked with result: {result}")
+        self.result = result
         self.dialog.destroy()
     
     def cancel_clicked(self):
+        print("❌ DEBUG Dialog: Cancel clicked")
         self.dialog.destroy() 
