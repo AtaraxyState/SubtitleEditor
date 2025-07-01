@@ -84,9 +84,26 @@ class SubtitleEditor:
                                     font=ctk.CTkFont(size=18, weight="bold"))
         content_header.grid(row=0, column=0, pady=20, padx=20, sticky="w")
         
+        # Create two-column layout for subtitle tracks and pending operations
+        content_frame = ctk.CTkFrame(main_frame)
+        content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        content_frame.grid_columnconfigure(0, weight=2)  # Subtitle tracks take more space
+        content_frame.grid_columnconfigure(1, weight=1)  # Pending operations take less space
+        content_frame.grid_rowconfigure(0, weight=1)
+        
+        # Subtitle tracks frame
+        tracks_frame = ctk.CTkFrame(content_frame)
+        tracks_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        tracks_frame.grid_columnconfigure(0, weight=1)
+        tracks_frame.grid_rowconfigure(1, weight=1)
+        
+        tracks_header = ctk.CTkLabel(tracks_frame, text="Current Subtitle Tracks", 
+                                   font=ctk.CTkFont(size=16, weight="bold"))
+        tracks_header.grid(row=0, column=0, pady=10, padx=10, sticky="w")
+        
         # Scrollable frame for subtitle tracks
-        self.scroll_frame = ctk.CTkScrollableFrame(main_frame, label_text="")
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.scroll_frame = ctk.CTkScrollableFrame(tracks_frame, label_text="")
+        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
         self.scroll_frame.grid_columnconfigure(0, weight=1)
         
         # Initial message
@@ -95,6 +112,34 @@ class SubtitleEditor:
                                         font=ctk.CTkFont(size=14),
                                         text_color="gray")
         self.empty_message.grid(row=0, column=0, pady=50)
+        
+        # Pending operations frame
+        operations_frame = ctk.CTkFrame(content_frame)
+        operations_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        operations_frame.grid_columnconfigure(0, weight=1)
+        operations_frame.grid_rowconfigure(2, weight=1)
+        
+        operations_header = ctk.CTkLabel(operations_frame, text="Pending Operations", 
+                                       font=ctk.CTkFont(size=16, weight="bold"))
+        operations_header.grid(row=0, column=0, pady=10, padx=10, sticky="w")
+        
+        # Clear all button
+        self.clear_operations_button = ctk.CTkButton(operations_frame, text="Clear All", 
+                                                   command=self.clear_all_operations, 
+                                                   height=30, state="disabled")
+        self.clear_operations_button.grid(row=1, column=0, pady=(0, 10), padx=10, fill="x")
+        
+        # Scrollable frame for pending operations
+        self.operations_scroll_frame = ctk.CTkScrollableFrame(operations_frame, label_text="")
+        self.operations_scroll_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.operations_scroll_frame.grid_columnconfigure(0, weight=1)
+        
+        # Initial operations message
+        self.operations_empty_message = ctk.CTkLabel(self.operations_scroll_frame, 
+                                                   text="No pending operations",
+                                                   font=ctk.CTkFont(size=12),
+                                                   text_color="gray")
+        self.operations_empty_message.grid(row=0, column=0, pady=20)
     
     def select_video(self):
         """Open file dialog to select video file"""
@@ -276,90 +321,93 @@ class SubtitleEditor:
             language, title, is_default = dialog.result
             print(f"✅ DEBUG: Dialog result - Language: {language}, Title: {title}, Default: {is_default}")
             
-            # Add subtitle to current video in-place (create temporary file)
-            print("🔄 DEBUG: Adding subtitle in-place...")
+            # Queue the subtitle addition operation
+            print("🔄 DEBUG: Queueing subtitle addition...")
+            success = self.video_handler.queue_add_subtitle(file_path, language, title, is_default)
             
-            # Create a temporary output file
-            import tempfile
-            temp_dir = tempfile.gettempdir()
-            video_name = Path(self.current_video_path).stem
-            temp_output = os.path.join(temp_dir, f"{video_name}_temp_with_subtitle{Path(self.current_video_path).suffix}")
-            
-            print(f"📁 DEBUG: Temporary output path: {temp_output}")
-            
-            self.process_video_operation(
-                lambda: self.video_handler.add_subtitle_track_inplace(file_path, temp_output, language, title, is_default),
-                "Adding subtitle track...",
-                "Subtitle added to video!",
-                temp_output
-            )
+            if success:
+                print("✅ DEBUG: Subtitle addition queued successfully")
+                messagebox.showinfo("Queued", f"Subtitle addition queued!\nLanguage: {language}\nTitle: {title}\n\nUse 'Export Video' to apply all changes.")
+                # Refresh UI to show pending operations
+                self.update_pending_operations()
+            else:
+                print("❌ DEBUG: Failed to queue subtitle addition")
+                messagebox.showerror("Error", "Failed to queue subtitle addition")
         else:
             print("❌ DEBUG: Dialog cancelled or no result")
     
     def remove_subtitle(self, track_index):
-        """Remove subtitle track"""
+        """Queue subtitle track removal"""
         track = self.video_handler.subtitle_tracks[track_index]
         title = track.get('title', f'Track {track_index + 1}')
         
-        if messagebox.askyesno("Confirm", f"Remove subtitle track '{title}'?"):
-            video_name = Path(self.current_video_path).stem
-            output_path = filedialog.asksaveasfilename(
-                title="Save Video without Subtitle",
-                defaultextension=Path(self.current_video_path).suffix,
-                initialfile=f"{video_name}_removed_subtitle{Path(self.current_video_path).suffix}",
-                filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
-            )
+        if messagebox.askyesno("Confirm", f"Queue removal of subtitle track '{title}'?\n\nUse 'Export Video' to apply all changes."):
+            success = self.video_handler.queue_remove_subtitle(track_index)
             
-            if output_path:
-                self.process_video_operation(
-                    lambda: self.video_handler.remove_subtitle_track(track_index, output_path),
-                    "Removing subtitle track...",
-                    "Subtitle removed successfully!",
-                    output_path
-                )
+            if success:
+                messagebox.showinfo("Queued", f"Subtitle removal queued!\nTrack: {title}\n\nUse 'Export Video' to apply all changes.")
+                self.update_pending_operations()
+            else:
+                messagebox.showerror("Error", "Failed to queue subtitle removal")
     
     def set_default_subtitle(self, track_index):
-        """Set subtitle track as default"""
+        """Queue setting subtitle track as default"""
         track = self.video_handler.subtitle_tracks[track_index]
         title = track.get('title', f'Track {track_index + 1}')
         
-        if messagebox.askyesno("Confirm", f"Set '{title}' as default subtitle?"):
-            video_name = Path(self.current_video_path).stem
+        if messagebox.askyesno("Confirm", f"Queue setting '{title}' as default subtitle?\n\nUse 'Export Video' to apply all changes."):
+            success = self.video_handler.queue_set_default_subtitle(track_index)
+            
+            if success:
+                messagebox.showinfo("Queued", f"Set default queued!\nTrack: {title}\n\nUse 'Export Video' to apply all changes.")
+                self.update_pending_operations()
+            else:
+                messagebox.showerror("Error", "Failed to queue set default")
+    
+    def export_video(self):
+        """Export video with all pending operations applied"""
+        if not self.current_video_path:
+            messagebox.showerror("Error", "No video loaded")
+            return
+        
+        pending_ops = self.video_handler.get_pending_operations()
+        
+        if not pending_ops:
+            # No pending operations, just copy the original file
             output_path = filedialog.asksaveasfilename(
-                title="Save Video with Default Subtitle",
+                title="Export Video (No Changes)",
                 defaultextension=Path(self.current_video_path).suffix,
-                initialfile=f"{video_name}_default_subtitle{Path(self.current_video_path).suffix}",
+                initialfile=f"exported_{Path(self.current_video_path).name}",
                 filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
             )
             
             if output_path:
-                self.process_video_operation(
-                    lambda: self.video_handler.set_default_subtitle(track_index, output_path),
-                    "Setting default subtitle...",
-                    "Default subtitle set successfully!",
-                    output_path
+                try:
+                    import shutil
+                    shutil.copy2(self.current_video_path, output_path)
+                    messagebox.showinfo("Success", f"Video exported to:\n{output_path}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Export failed: {e}")
+        else:
+            # Has pending operations - execute them all
+            op_summary = "\n".join([f"• {op['display_name']}" for op in pending_ops])
+            
+            if messagebox.askyesno("Confirm Export", f"Export video with {len(pending_ops)} pending operations?\n\n{op_summary}"):
+                output_path = filedialog.asksaveasfilename(
+                    title=f"Export Video with {len(pending_ops)} Operations",
+                    defaultextension=Path(self.current_video_path).suffix,
+                    initialfile=f"exported_{Path(self.current_video_path).name}",
+                    filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
                 )
-    
-    def export_video(self):
-        """Export current video"""
-        if not self.current_video_path:
-            return
-        
-        output_path = filedialog.asksaveasfilename(
-            title="Export Video",
-            defaultextension=Path(self.current_video_path).suffix,
-            initialfile=f"exported_{Path(self.current_video_path).name}",
-            filetypes=[("Video files", "*.mp4 *.avi *.mkv"), ("All files", "*.*")]
-        )
-        
-        if output_path:
-            # Simple copy for now
-            try:
-                import shutil
-                shutil.copy2(self.current_video_path, output_path)
-                messagebox.showinfo("Success", f"Video exported to:\n{output_path}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Export failed: {e}")
+                
+                if output_path:
+                    print(f"🔄 DEBUG: Starting export with {len(pending_ops)} operations")
+                    self.process_video_operation(
+                        lambda: self.video_handler.execute_all_operations(output_path),
+                        f"Exporting video with {len(pending_ops)} operations...",
+                        "Video exported successfully!",
+                        output_path
+                    )
     
     def process_video_operation(self, operation, loading_text, success_text, output_path):
         """Process video operation with loading UI"""
@@ -413,22 +461,24 @@ class SubtitleEditor:
         if success:
             print("✅ DEBUG: Operation was successful")
             
-            # Check if this is an in-place operation (temp file)
-            if "temp_with_subtitle" in output_path:
-                print("🔄 DEBUG: In-place operation detected, refreshing UI")
-                messagebox.showinfo("Success", success_text)
-                # Refresh the UI to show the new subtitle track
-                self.update_subtitle_tracks()
-                self.update_video_info()
-            else:
-                print("✅ DEBUG: Export operation, showing success dialog")
+            # Check if this is an export operation with pending operations
+            if "Exporting video with" in success_text:
+                print("🔄 DEBUG: Export operation completed successfully")
                 messagebox.showinfo("Success", f"{success_text}\nSaved to: {output_path}")
+                
+                # Clear pending operations after successful export
+                self.video_handler.clear_pending_operations()
+                self.update_pending_operations()
+                
                 # Optionally reload the new video
                 if messagebox.askyesno("Load New Video", "Would you like to load the newly created video?"):
                     print("🔄 DEBUG: User chose to load new video")
                     self.load_video(output_path)
                 else:
                     print("🔄 DEBUG: User chose not to load new video")
+            else:
+                print("✅ DEBUG: Regular operation, showing success dialog")
+                messagebox.showinfo("Success", f"{success_text}\nSaved to: {output_path}")
         else:
             print("❌ DEBUG: Operation failed, showing error dialog")
             messagebox.showerror("Error", "Operation failed")
@@ -450,6 +500,58 @@ class SubtitleEditor:
     def run(self):
         """Start the application"""
         self.root.mainloop()
+    
+    def update_pending_operations(self):
+        """Update the pending operations display"""
+        # Clear existing operations widgets
+        for widget in self.operations_scroll_frame.winfo_children():
+            widget.destroy()
+        
+        pending_ops = self.video_handler.get_pending_operations()
+        
+        if not pending_ops:
+            self.operations_empty_message = ctk.CTkLabel(self.operations_scroll_frame, 
+                                                       text="No pending operations",
+                                                       font=ctk.CTkFont(size=12),
+                                                       text_color="gray")
+            self.operations_empty_message.grid(row=0, column=0, pady=20)
+            self.clear_operations_button.configure(state="disabled")
+            return
+        
+        # Enable clear button
+        self.clear_operations_button.configure(state="normal")
+        
+        # Create operation widgets
+        for i, operation in enumerate(pending_ops):
+            op_frame = ctk.CTkFrame(self.operations_scroll_frame)
+            op_frame.grid(row=i, column=0, sticky="ew", pady=2, padx=5)
+            op_frame.grid_columnconfigure(0, weight=1)
+            
+            # Operation info
+            op_label = ctk.CTkLabel(op_frame, text=operation['display_name'], 
+                                  font=ctk.CTkFont(size=11), justify="left")
+            op_label.grid(row=0, column=0, pady=5, padx=8, sticky="w")
+            
+            # Remove this operation button
+            remove_button = ctk.CTkButton(op_frame, text="×", width=25, height=25,
+                                        command=lambda idx=i: self.remove_pending_operation(idx))
+            remove_button.grid(row=0, column=1, pady=5, padx=5)
+    
+    def remove_pending_operation(self, operation_index):
+        """Remove a specific pending operation"""
+        pending_ops = self.video_handler.get_pending_operations()
+        if operation_index < len(pending_ops):
+            removed_op = pending_ops.pop(operation_index)
+            self.video_handler.pending_operations = pending_ops
+            print(f"🔄 DEBUG: Removed pending operation: {removed_op['display_name']}")
+            self.update_pending_operations()
+    
+    def clear_all_operations(self):
+        """Clear all pending operations"""
+        if messagebox.askyesno("Confirm", "Clear all pending operations?"):
+            self.video_handler.clear_pending_operations()
+            self.update_pending_operations()
+            messagebox.showinfo("Cleared", "All pending operations cleared")
 
 
 class SubtitlePropertiesDialog:

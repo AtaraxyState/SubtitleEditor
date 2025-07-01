@@ -10,6 +10,7 @@ class VideoHandler:
     def __init__(self):
         self.current_video_path = None
         self.subtitle_tracks = []
+        self.pending_operations = []  # Queue of operations to execute on export
     
     def load_video(self, video_path: str) -> bool:
         """Load a video file and extract subtitle information"""
@@ -169,21 +170,30 @@ class VideoHandler:
                 output_path
             ]
             
-            # Add metadata for the NEW subtitle track (use correct index)
-            new_sub_index = current_sub_count
+            # Calculate the correct output stream index for the new subtitle
+            # Count existing subtitle streams in the video
+            probe = ffmpeg.probe(self.current_video_path)
+            existing_subtitle_count = sum(1 for stream in probe['streams'] if stream['codec_type'] == 'subtitle')
             
+            # The new subtitle will be at this index in the output
+            new_output_sub_index = existing_subtitle_count
+            
+            print(f"📊 DEBUG: Existing subtitle streams: {existing_subtitle_count}")
+            print(f"📊 DEBUG: New subtitle output index: {new_output_sub_index}")
+            
+            # Add metadata for the NEW subtitle track
             if language and language != "unknown":
-                cmd.extend([f'-metadata:s:s:{new_sub_index}', f'language={language}'])
-                print(f"🌐 DEBUG: Added language metadata for track s:{new_sub_index}: {language}")
+                cmd.extend([f'-metadata:s:s:{new_output_sub_index}', f'language={language}'])
+                print(f"🌐 DEBUG: Added language metadata for output track s:{new_output_sub_index}: {language}")
             
             if title and title.strip():
-                cmd.extend([f'-metadata:s:s:{new_sub_index}', f'title={title}'])
-                print(f"📝 DEBUG: Added title metadata for track s:{new_sub_index}: {title}")
+                cmd.extend([f'-metadata:s:s:{new_output_sub_index}', f'title={title}'])
+                print(f"📝 DEBUG: Added title metadata for output track s:{new_output_sub_index}: {title}")
             
             # Set disposition for the NEW subtitle track
             if is_default:
-                cmd.extend([f'-disposition:s:s:{new_sub_index}', 'default'])
-                print(f"⭐ DEBUG: Set track s:{new_sub_index} as default")
+                cmd.extend([f'-disposition:s:s:{new_output_sub_index}', 'default'])
+                print(f"⭐ DEBUG: Set output track s:{new_output_sub_index} as default")
             
             print(f"🔄 DEBUG: FFmpeg command: {' '.join(cmd)}")
             
@@ -311,4 +321,120 @@ class VideoHandler:
             }
         except Exception as e:
             print(f"Error getting video info: {e}")
-            return {} 
+            return {}
+    
+    def queue_add_subtitle(self, subtitle_file_path: str, language: str = "unknown", title: str = "", is_default: bool = False):
+        """Queue a subtitle addition operation for later execution"""
+        operation = {
+            'type': 'add_subtitle',
+            'subtitle_file': subtitle_file_path,
+            'language': language,
+            'title': title,
+            'is_default': is_default,
+            'display_name': f"Add: {Path(subtitle_file_path).stem} ({language})"
+        }
+        self.pending_operations.append(operation)
+        print(f"🔄 DEBUG: Queued subtitle addition: {operation['display_name']}")
+        return True
+    
+    def queue_remove_subtitle(self, track_index: int):
+        """Queue a subtitle removal operation for later execution"""
+        if track_index < len(self.subtitle_tracks):
+            track = self.subtitle_tracks[track_index]
+            operation = {
+                'type': 'remove_subtitle',
+                'track_index': track_index,
+                'display_name': f"Remove: {track.get('title', f'Track {track_index + 1}')}"
+            }
+            self.pending_operations.append(operation)
+            print(f"🔄 DEBUG: Queued subtitle removal: {operation['display_name']}")
+            return True
+        return False
+    
+    def queue_set_default_subtitle(self, track_index: int):
+        """Queue a set default subtitle operation for later execution"""
+        if track_index < len(self.subtitle_tracks):
+            track = self.subtitle_tracks[track_index]
+            operation = {
+                'type': 'set_default',
+                'track_index': track_index,
+                'display_name': f"Set Default: {track.get('title', f'Track {track_index + 1}')}"
+            }
+            self.pending_operations.append(operation)
+            print(f"🔄 DEBUG: Queued set default: {operation['display_name']}")
+            return True
+        return False
+    
+    def clear_pending_operations(self):
+        """Clear all pending operations"""
+        self.pending_operations.clear()
+        print("🔄 DEBUG: Cleared all pending operations")
+    
+    def get_pending_operations(self):
+        """Get list of pending operations for UI display"""
+        return self.pending_operations.copy()
+    
+    def execute_all_operations(self, output_path: str) -> bool:
+        """Execute all pending operations and create final video"""
+        if not self.current_video_path or not self.pending_operations:
+            print("❌ DEBUG: No video loaded or no pending operations")
+            return False
+        
+        print(f"🔄 DEBUG: Executing {len(self.pending_operations)} pending operations")
+        
+        try:
+            # Start with the original video
+            current_input = self.current_video_path
+            
+            # Execute operations sequentially
+            for i, operation in enumerate(self.pending_operations):
+                print(f"🔄 DEBUG: Executing operation {i+1}/{len(self.pending_operations)}: {operation['display_name']}")
+                
+                # Create intermediate file path
+                if i == len(self.pending_operations) - 1:
+                    # Last operation - use final output path
+                    intermediate_output = output_path
+                else:
+                    # Intermediate operation - use temp file
+                    import tempfile
+                    temp_dir = tempfile.gettempdir()
+                    intermediate_output = os.path.join(temp_dir, f"intermediate_{i}.mkv")
+                
+                # Execute the operation
+                success = self._execute_single_operation(current_input, intermediate_output, operation)
+                
+                if not success:
+                    print(f"❌ DEBUG: Failed to execute operation: {operation['display_name']}")
+                    return False
+                
+                # Update current input for next operation
+                current_input = intermediate_output
+            
+            print("✅ DEBUG: All operations executed successfully")
+            return True
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Error executing operations: {e}")
+            return False
+    
+    def _execute_single_operation(self, input_path: str, output_path: str, operation: dict) -> bool:
+        """Execute a single operation"""
+        try:
+            if operation['type'] == 'add_subtitle':
+                return self.add_subtitle_track(
+                    operation['subtitle_file'], 
+                    output_path, 
+                    operation['language'], 
+                    operation['title'], 
+                    operation['is_default']
+                )
+            elif operation['type'] == 'remove_subtitle':
+                return self.remove_subtitle_track(operation['track_index'], output_path)
+            elif operation['type'] == 'set_default':
+                return self.set_default_subtitle(operation['track_index'], output_path)
+            else:
+                print(f"❌ DEBUG: Unknown operation type: {operation['type']}")
+                return False
+        except Exception as e:
+            print(f"❌ DEBUG: Error executing single operation: {e}")
+            return False
